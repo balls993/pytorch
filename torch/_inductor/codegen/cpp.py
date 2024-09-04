@@ -144,14 +144,6 @@ VECTORIZABLE_DTYPES: List[torch.dtype] = [
     torch.int64,
 ]
 
-MASKED_VECTORIZABLE_DTYPES: List[torch.dtype] = [
-    torch.float,
-    torch.bfloat16,
-    torch.float16,
-    torch.uint8,
-    torch.int8,
-]
-
 
 def reduction_init(reduction_type, dtype):
     if dtype in DTYPE_LOWP_FP:
@@ -2886,7 +2878,10 @@ class CppVecKernel(CppKernel):
             else:
                 return f"{reduction_type}_combine_vec<{cdtype}, {n_src}, {n_idx}{t_extra}>({var}, {next_value}{arg_extra})"
         elif reduction_type == "any":
-            return f"{var} | {next_value}"
+            if self.tail_size:
+                return f"any_masked_reduce({var}, {next_value}, {cexpr_index(self.tail_size)})"
+            else:
+                return f"{var} | {next_value}"
         else:
             raise NotImplementedError
 
@@ -3666,12 +3661,6 @@ class CppKernelProxy(CppKernel):
                 fn_list, var_sizes_list
             )
             assert len(tiling_factors) == len(tiling_indices)
-            # <TODO> This should be removed after full support for vectorization is implemented.
-            could_masked_vec = True
-            all_dtypes = _get_dtype_from_loopbodies(_get_loop_body(fn_list))
-            if any(dtype not in MASKED_VECTORIZABLE_DTYPES for dtype in all_dtypes):
-                # can be removed after masked vectorizable dtype are same with vectorizable dtype
-                could_masked_vec = False
 
             if len(tiling_indices) == 1:
                 vec_kernel = codegen_kernel(
@@ -3683,7 +3672,7 @@ class CppKernelProxy(CppKernel):
                 )
                 main_loop.set_kernel(vec_kernel)
                 main_loop.simd_vec = True
-                if config.cpp.enable_loop_tail_vec and could_masked_vec:
+                if config.cpp.enable_loop_tail_vec:
                     tail_loop.steps = tail_loop.size - tail_loop.offset
                     masked_vec_kernel = codegen_kernel(
                         CppVecKernel,
@@ -3723,7 +3712,7 @@ class CppKernelProxy(CppKernel):
                 )
                 inner_main_loop.set_kernel(tile2d_kernel)
 
-                if config.cpp.enable_loop_tail_vec and could_masked_vec:
+                if config.cpp.enable_loop_tail_vec:
                     (
                         inner_main_loop_of_outer_tail_loop,
                         inner_tail_loop_of_outer_tail_loop,
