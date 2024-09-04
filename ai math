@@ -1,0 +1,21 @@
+mport cv2
+import pytesseract
+import sympy
+
+def solve_math_problem(image_path):
+    # Load the image and extract text
+    img = cv2.imread(image_path)
+    text = pytesseract.image_to_string(img)
+
+    # Convert text to a mathematical expression
+    math_expr = sympy.parse_expr(text)
+
+    # Solve the expression
+    solution = sympy.solve(math_expr)
+
+    return solution
+
+# Example usage
+image_path = 'path/to/your/image.jpg'
+solution = solve_math_problem(image_path)
+print(solution)
